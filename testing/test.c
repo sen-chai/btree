@@ -52,6 +52,21 @@ int main()
     
     int c = 0;
     printf("\n%d",a[c++]);
-    printf("\n%d",c);
+    printf("\n%d\n",c);
+
+    printf("%d\n",11+(int)1/2);
+
+    dd *memory = (dd*) calloc(1,sizeof(dd));
+    memory->a = 123;
+
+    printf("passed %p\n",memory);
+
+    dd *usesame(dd *memory){
+        memory->a = 321;
+        printf("got %p\n",memory);
+        return memory;
+    }
+    memory = usesame(memory);
+    printf("returned %p\n",memory);
     return 0;
 }
