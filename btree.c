@@ -1,18 +1,18 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-// #include "btree.h"
 
-#define BUFFERSIZE 256 
-#define ORDER 3
+#define BUFFERSIZE 4096 
+// #define ORDER 3
+#define ORDER 13
 #define INTFIELD 10
 #define STRFIELD 16
 // #define PAGESIZE 3*INTFIELD+3*ORDER*INTFIELD-1
 // #define PAGEFREESPACE (BUFFERSIZE-PAGESIZE)
 #define STUDENTSIZE (2*INTFIELD+3*STRFIELD-1)
 
-#define PAGESIZE 119
-#define PAGEFREESPACE 137
+// #define PAGESIZE 119
+// #define PAGEFREESPACE 137
 
 typedef struct STUDENT STUDENT;
 typedef struct PAGE PAGE;
@@ -150,6 +150,7 @@ void storeIndexPage(FILE*file, PAGE *pg){
 }
 
 void printPage(PAGE *pg){
+	// auxilia debug
 	printf("isparent:%-*dpagerrn:%-*dnkeys:%-*d\n",INTFIELD, pg->isparent,INTFIELD, pg->pagerrn,INTFIELD, pg->nkeys);
 	for(int i = 0; i<pg->nkeys ; i++){
 		printf("%-*d",INTFIELD,pg->keys[i]);
@@ -164,13 +165,12 @@ void printPage(PAGE *pg){
 }
 
 void printStudent(STUDENT st){
-	printf("\n%d|%s|%s|%s|%f\n",st.numUSP,st.name,st.surname,st.course,st.grade);
+	printf("%d|%s|%s|%s|%f\n",st.numUSP,st.name,st.surname,st.course,st.grade);
 }
 
 void getStudent(FILE*dataFile,int rrn){
 	fseek(dataFile,rrn*(STUDENTSIZE),SEEK_SET);
 	STUDENT st;
-	// fscanf(dataFile,"%d%s%s%s%f",&st.numUSP,st.name,st.surname,st.course,&st.grade);
 	fscanf(dataFile,"%d",&st.numUSP);
 	fscanf(dataFile,"%s",st.name);
 	fscanf(dataFile,"%s",st.surname);
@@ -179,37 +179,7 @@ void getStudent(FILE*dataFile,int rrn){
 	printf("\n%d|%s|%s|%s|%f\n",st.numUSP,st.name,st.surname,st.course,st.grade);
 }
 
-int recursive_search(FILE *index, int target, int key) {
-    if(target == -1) {
-        return -1;
-    }
-
-    PAGE *page = createEmptyIndexPage();
-	getIndexPage(index,page,target);
-	printPage(page);
-	printf("__ page %d\n",page->pagerrn);
-
-    int i = 0;
-    while(i < page->nkeys && key > page->keys[i]) {
-        i++;
-    }
-
-    int n = -1;
-    if(i == page->nkeys-1) {
-        // ultimo
-        n = recursive_search(index, page->children[page->nkeys-1], key);
-    } else if (key != page->keys[i]){
-        // nao for a resposta procurada, pode ir a esquerda
-        n = recursive_search(index, page->children[i], key);
-    } else {
-        // achou referencia, e retorna ela
-        n = page->rrns[i];
-    }
-    
-    free_page(&page);
-    return n;
-}
-int _search(FILE*indexFile,BTREE*tree,int key){
+int searchStudentByKey(FILE*indexFile,BTREE*tree,int key){
 	PAGE*pg=createEmptyIndexPage();
 	getIndexPage(indexFile,pg,tree->root);
 	int i = 0;
@@ -237,31 +207,21 @@ int _search(FILE*indexFile,BTREE*tree,int key){
 	return -1;
 	// not found
 }
-int searchStudentByKey(FILE*file,BTREE*tree, PAGE*pg, int key){
-	for(int i = 0; i<pg->nkeys ; i++){
-		if(pg->keys[i]==key) return pg->rrns[i]; // achou a chave
-		if(pg->isparent){ 
-			if(key < pg->keys[i] ){ // necessidade de procurar proxima pagina
-				pg = getIndexPage(file,pg,pg->children[i]);
-			}
-			else if(i==pg->nkeys-1 && key>pg->keys[i]){ // ultimo estudante da pagina 
-				pg = getIndexPage(file,pg,pg->children[i+1]);
-			}
-			return searchStudentByKey(file,tree,pg,key);
-		}
-	}
-	return -1; // not found
-}
 
-void enterStudent(STUDENT*st){
-	// check the max values, if the char passes, files might break
-	// printf("Insira os dados na seguinte Ordem:\n \t 1.numUSP \t 2.Nome \t 3.Sobrenome  \t 4.Curso  \t 5.nota \n");
-	// printf("Numero USP: " );scanf("%d",&aluno.numUSP);
-	// printf("\nNome: " );scanf("\n%[^\n\r]",aluno.nome);
-	// printf("\nSobrenome: " );scanf("\n%[^\n\r]",aluno.sobrenome);
-	// printf("\nCurso: " );scanf("\n%[^\n\r]",aluno.curso);
-	// printf("\nNota: " );scanf("%e",&aluno.nota);
-	// return STUDENT;
+STUDENT *enterStudent(STUDENT*st){
+	// aceita entrada no terminal
+	printf("Insira os dados na seguinte Ordem:\n \t 1.numUSP \t 2.Nome \t 3.Sobrenome  \t 4.Curso  \t 5.nota \n");
+	printf("Numero USP: " );
+	scanf("%d",&st->numUSP);
+	printf("\nNome: " );
+	scanf("%s",st->name);
+	printf("\nSobrenome: " );
+	scanf("%s",st->surname);
+	printf("\nCurso: " );
+	scanf("%s",st->course);
+	printf("\nNota: " );
+	scanf("%f",&st->grade);
+	return st;
 }
 
 void insertKeyToLeaf(BTREE*tree,PAGE*pg,int key){

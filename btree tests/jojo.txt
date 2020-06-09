@@ -1,0 +1,7 @@
+
+    {11,"jonathan","joestar","DD",1.1},
+    {12,"joseph","joestar","DD",2.2},
+    {13,"jotaro","kujo","DD",3.3},
+    {14,"josuke","joestar","DD",4.4},
+    {15,"giorno","giovana","DD",5.5},
+    {16,"jolyne","kujo","DD",6.6},
