@@ -46,19 +46,13 @@ int main(void){
                 insertStudent(dataFile,indexFile,tree,pg,&sts[i]);
             }
             only_once_populate =0;
+            printf("Insercao automatica realizada\n\n");
+        }
+        else{
+            break;
         }
 	} while(command> 0);    
 
-    // FILE*test = fopen("tests.txt","r");
-    // int test_size = 100;
-    // int test_result;
-    // for(int i = 0; i<test_size ; i++){
-    //     fscanf(test,"%d",&test_result);
-    //     register_position = searchStudentByKey(indexFile,tree,key);
-    //     getStudent(dataFile,register_position);
-
-
-    // }
     storeIndexHeader(indexHeader,tree);
     fclose(indexHeader);
     fclose(indexFile);
