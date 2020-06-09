@@ -5,11 +5,14 @@
 
 #define BUFFERSIZE 256 
 #define ORDER 3
-#define INTFIELD 8
+#define INTFIELD 10
 #define STRFIELD 16
-#define PAGESIZE 3*INTFIELD+3*ORDER*INTFIELD-2
-#define PAGEFREESPACE BUFFERSIZE-PAGESIZE
-#define STUDENTSIZE 2*INTFIELD+3*STRFIELD
+// #define PAGESIZE 3*INTFIELD+3*ORDER*INTFIELD-1
+// #define PAGEFREESPACE (BUFFERSIZE-PAGESIZE)
+#define STUDENTSIZE (2*INTFIELD+3*STRFIELD-1)
+
+#define PAGESIZE 119
+#define PAGEFREESPACE 137
 
 typedef struct STUDENT STUDENT;
 typedef struct PAGE PAGE;
@@ -59,7 +62,6 @@ BTREE *loadIndexHeader(FILE*file){
 	int fileEnd = ftell(file);
 	if(fileEnd == 0){
 		tree = (BTREE*) calloc(1,sizeof(BTREE));
-		printf("\nfile was empty\n");
 	}
 	else{
 		tree = (BTREE*) malloc(sizeof(BTREE));
@@ -79,13 +81,39 @@ PAGE *createEmptyIndexPage(){
 	pg->keys = (int*) calloc(ORDER,sizeof(int));
 	pg->rrns = (int*) calloc(ORDER,sizeof(int));
 	pg->children = (int*) calloc(ORDER+1,sizeof(int));
-	// pg->freespace = (void*) calloc(1,PAGEFREESPACE);
+
+	for(int i = 0; i< ORDER ; i++){
+		pg->keys[i] = -1;
+		pg->rrns[i] = -1;
+		pg->children[i] = -1;
+	}
+	pg->children[ORDER] = -1;
+	
 	return pg;
+}
+void free_page(PAGE **page) {
+
+    if(*page == NULL) return;
+
+    if((*page)->keys!= NULL)
+        free((*page)->keys);
+    
+    if((*page)->rrns!= NULL)
+        free((*page)->rrns);
+        
+    if((*page)->children!= NULL)
+        free((*page)->children);
+
+    free(*page);
+    *page = NULL;
+    return;
 }
 
 PAGE *getIndexPage(FILE*file,PAGE*pg,int pos){
 	fseek(file,pos*BUFFERSIZE,SEEK_SET);
-	fscanf(file,"%d%d%d", &pg->isparent, &pg->pagerrn, &pg->nkeys);
+	fscanf(file,"%d", &pg->isparent);
+	fscanf(file,"%d", &pg->pagerrn);
+	fscanf(file,"%d", &pg->nkeys);
 	for(int i = 0; i<pg->nkeys; i++){
 		fscanf(file,"%d",&pg->keys[i]);
 	}
@@ -102,6 +130,8 @@ PAGE *getIndexPage(FILE*file,PAGE*pg,int pos){
 
 void storeIndexPage(FILE*file, PAGE *pg){
 	fseek(file,pg->pagerrn*BUFFERSIZE,SEEK_SET);
+	// fseek(file,0,SEEK_END);
+	int start = ftell(file);
 	fprintf(file,"%-*d%-*d%-*d",INTFIELD, pg->isparent,INTFIELD, pg->pagerrn,INTFIELD, pg->nkeys);
 	for(int i = 0; i<pg->nkeys ; i++){
 		fprintf(file,"%-*d",INTFIELD,pg->keys[i]);
@@ -114,7 +144,9 @@ void storeIndexPage(FILE*file, PAGE *pg){
 	}
 	// registrar ultima child rrn
 	fprintf(file,"%-*d",INTFIELD, pg->children[pg->nkeys]);
-	fprintf(file,"%*s",PAGEFREESPACE,"");
+	int end = ftell(file);
+	int free_space = BUFFERSIZE-(end-start)-1;
+	fprintf(file,"%*s\n",free_space,"");
 }
 
 void printPage(PAGE *pg){
@@ -128,15 +160,84 @@ void printPage(PAGE *pg){
 	for(int i = 0; i<pg->nkeys ; i++){
 		printf("%-*d",INTFIELD,pg->children[i]);
 	}
-	printf("%-*d",INTFIELD, pg->children[pg->nkeys]);
+	printf("%-*d\n\n",INTFIELD, pg->children[pg->nkeys]);
 }
 
 void printStudent(STUDENT st){
 	printf("\n%d|%s|%s|%s|%f\n",st.numUSP,st.name,st.surname,st.course,st.grade);
 }
 
+void getStudent(FILE*dataFile,int rrn){
+	fseek(dataFile,rrn*(STUDENTSIZE),SEEK_SET);
+	STUDENT st;
+	// fscanf(dataFile,"%d%s%s%s%f",&st.numUSP,st.name,st.surname,st.course,&st.grade);
+	fscanf(dataFile,"%d",&st.numUSP);
+	fscanf(dataFile,"%s",st.name);
+	fscanf(dataFile,"%s",st.surname);
+	fscanf(dataFile,"%s",st.course);
+	fscanf(dataFile,"%f",&st.grade);
+	printf("\n%d|%s|%s|%s|%f\n",st.numUSP,st.name,st.surname,st.course,st.grade);
+}
+
+int recursive_search(FILE *index, int target, int key) {
+    if(target == -1) {
+        return -1;
+    }
+
+    PAGE *page = createEmptyIndexPage();
+	getIndexPage(index,page,target);
+	printPage(page);
+	printf("__ page %d\n",page->pagerrn);
+
+    int i = 0;
+    while(i < page->nkeys && key > page->keys[i]) {
+        i++;
+    }
+
+    int n = -1;
+    if(i == page->nkeys-1) {
+        // ultimo
+        n = recursive_search(index, page->children[page->nkeys-1], key);
+    } else if (key != page->keys[i]){
+        // nao for a resposta procurada, pode ir a esquerda
+        n = recursive_search(index, page->children[i], key);
+    } else {
+        // achou referencia, e retorna ela
+        n = page->rrns[i];
+    }
+    
+    free_page(&page);
+    return n;
+}
+int _search(FILE*indexFile,BTREE*tree,int key){
+	PAGE*pg=createEmptyIndexPage();
+	getIndexPage(indexFile,pg,tree->root);
+	int i = 0;
+	while(pg->isparent>0){
+		for(i = 0; i<pg->nkeys ; i++){
+			if(key==pg->keys[i]){
+				return pg->rrns[i];
+			}
+			if(key < pg->keys[i] ){ 
+				// printf("left\n");
+				break;
+			}
+			else if(i==pg->nkeys-1){
+				// printf("right\n");
+				// i++;
+			}
+		}
+		// printf("-- append to track page: _%d_ index _%d_ child points to %d\n",pg->pagerrn,i,pg->children[i]);
+		getIndexPage(indexFile,pg,pg->children[i]);
+	}
+	for(int j=0; j<pg->nkeys; j++){
+		if(key==pg->keys[j])
+			return pg->rrns[j];
+	}
+	return -1;
+	// not found
+}
 int searchStudentByKey(FILE*file,BTREE*tree, PAGE*pg, int key){
-	printf("%d\n",pg->nkeys);
 	for(int i = 0; i<pg->nkeys ; i++){
 		if(pg->keys[i]==key) return pg->rrns[i]; // achou a chave
 		if(pg->isparent){ 
@@ -163,7 +264,7 @@ void enterStudent(STUDENT*st){
 	// return STUDENT;
 }
 
-int insertKeyToPage(BTREE*tree,PAGE*pg,int key){
+void insertKeyToLeaf(BTREE*tree,PAGE*pg,int key){
 	// insercao da chave em pagina usando insertion sort
 	// retorna 1 ou 0, se tiver lotacao total (overflow) ou nao
 	if(pg->isparent) {
@@ -178,15 +279,14 @@ int insertKeyToPage(BTREE*tree,PAGE*pg,int key){
 			pg->keys[i] = key;
 			pg->rrns[i] = tree->last_data_rrn++;
 			pg->nkeys++;
-			return 1;
+			return;
 		}
 	}
 	pg->keys[pg->nkeys] = key;
-	pg->nkeys++;
 	pg->rrns[pg->nkeys] = tree->last_data_rrn++;
-	return 0;
+	pg->nkeys++;
 }
-int promote(PAGE*parent,int prom_key,int prom_rrn,int child){
+void promote(PAGE*parent,int prom_key,int prom_rrn,int child){
 	// insere valores do overflow
 	// OBS todos os vetores tem expaco extra para comportar overflow, facilitando organizacao
 	for(int i = 0; i<parent->nkeys ; i++){
@@ -202,95 +302,140 @@ int promote(PAGE*parent,int prom_key,int prom_rrn,int child){
 			parent->children[i+1] = child;
 
 			parent->nkeys++;
-			return 1;
+			return ;
 		}
 	}
-	return 0;
+	parent->keys[parent->nkeys] = prom_key;
+	parent->rrns[parent->nkeys] = prom_rrn;
+	parent->children[parent->nkeys+1] = child;
+	parent->nkeys++;
 }
 
-void rootOverflow(PAGE *new_parent,PAGE*newpg,PAGE*pg){
-	if(root_overflow){
-		PAGE *newpg = createEmptyIndexPage();
-
-		PAGE *new_parent = createEmptyIndexPage();
-		new_parent->isparent = 1;
-		new_parent->pagerrn = ++tree->last_page_rrn;
-		splitParent(new_parent,newpg,pg);
-
-	}
-	// update root
-}
-void overflow(FILE*indexFile,BTREE *tree,PAGE*pg,int height,int parent_tracks[]){
+int overflow(FILE*indexFile,BTREE *tree,PAGE*pg,int height,int parent_tracks[]){
 	// lida com splits e overflows de folhas e parents que nao sejma root
 	// height: ordem de parent_tracks eh do parent mais proximo do filho para a raiz, por isso height inicia do zero, queremos recuperar o lastro de parents
+
+	PAGE*current_root = createEmptyIndexPage();
+	getIndexPage(indexFile,current_root,tree->root);
+	// printf("************ current Root : %d\n",tree->root);
+	// printf("tree->root : %d, nkeys %d\n",tree->root,current_root->nkeys);
+
 	PAGE *newpg = createEmptyIndexPage();
 	// split de folhas
-	int half, newpg->nkeys = (int) pg->nkeys/2;
+	int half = (int) pg->nkeys/2;
+	newpg->nkeys = (int) pg->nkeys/2;
 	if(pg->nkeys%2 == 0) newpg->nkeys--;
 	// quando o original for par, newpg split tera um elemento a menos
 	for(int i = 0; i<newpg->nkeys ; i++){
-		newpg->keys[i] = pg->keys[half+i];
-		newpg->rrns[i] = pg->rrns[half+i];
-		// poderia zerar o valor das chaves e rrns mas vou deixa-los como lixo
+		newpg->keys[i] = pg->keys[half+i+1];
+		newpg->rrns[i] = pg->rrns[half+i+1];
+		newpg->children[i] = pg->children[half+i+1];
+	}
+	newpg->children[newpg->nkeys] = pg->children[pg->nkeys];
+	if(height!=0){
+		newpg->isparent = 1;
 	}
 	newpg->pagerrn = ++tree->last_page_rrn;
+	// printf("=========== sibling newPageRRN %d\n",newpg->pagerrn);
 	storeIndexPage(indexFile,newpg);
-	free(newpg);
 
 	pg->nkeys = half;
+	int overflowed_rrn = pg->pagerrn;
 	storeIndexPage(indexFile,pg);
 
 	int promoted_key = pg->keys[half];
 	int promoted_rrn = pg->rrns[half];
-	int pg_overflow = 0;
-	int root_overflow = 0;
-	getIndexPage(indexFile,pg, parent_tracks[height++]);
-	promote(pg,promoted_key,promoted_rrn,newpg->pagerrn);
-	if(pg->pagerrn == tree->root){
-		root_overflow =1;
+
+
+	if(height==tree->height && current_root->nkeys>=ORDER){
+		// estou no root && rootOverflow
+		printf(" @@@@@@@@@@@ new root \n");
+		PAGE*newroot = createEmptyIndexPage();
+		newroot->isparent = 1;
+		newroot->pagerrn = ++tree->last_page_rrn;
+	// printf("=========== newroot pagerrn tree->pagerrn %d, page got %d\n",tree->last_page_rrn,newroot->pagerrn);
+		newroot->nkeys= 1;
+		newroot->keys[0] = promoted_key;
+		newroot->rrns[0] = promoted_rrn;
+		newroot->children[0] = overflowed_rrn;
+		newroot->children[1] = newpg->pagerrn ;
+		tree->height++;
+		tree->root = newroot->pagerrn;
+		storeIndexPage(indexFile,newroot);
+		printf("@********* new page : %d, new key %d\n",newroot->pagerrn,promoted_key);
+		free_page(&newroot);
 	}
+	else{
+		getIndexPage(indexFile,pg,parent_tracks[height]);
+		// ascendete mais proximo da folha que teve overflow
+		printf("%d ######### promotion\n",pg->keys[half]);
+		// getIndexPage(indexFile,pg,parent_tracks[height]);
+		printf("## before promotion\n");
+		printPage(pg);
+		promote(pg,promoted_key,promoted_rrn,newpg->pagerrn);
+		storeIndexPage(indexFile,pg);
+		printf("## after\n");
+		printPage(pg);
+	}
+	free_page(&newpg);
+	free_page(&current_root);
+	return height;
 }
 
 BTREE insertStudent(FILE *dataFile, FILE*indexFile, BTREE *tree,PAGE*pg, STUDENT *st){
 	pg = getIndexPage(indexFile,pg,tree->root) ;
+	// printf("Root : ");
+	// printPage(pg);
+
+	int parent_tracks[tree->height];
+	int i =0;
 	int key = st->numUSP;
-	int rrn = searchStudentByKey(indexFile,tree,pg,key);
-	if( rrn != -1){
-		// Valor ja existe e sera atualizado
-		printf("* Update Student value");
+	// int rrn = searchStudentByKey(indexFile,tree,pg,key);
+	// int rrn = _search(indexFile,tree,key);
+	// eoncontrar pagina folha correta
+	if(tree->height == 0 ){
+		parent_tracks[0] = 0;
 	}
-	else {
-		// eoncontrar pagina folha correta
-		int parent_tracks[tree->height];
-		int depht = tree->height;
-		// lastro de quais parents foram percorridos, ordenados inversamente a trajetoria percorrida
-		pg = getIndexPage(indexFile,pg,tree->root);
-		printf("got page _%d_\n",pg->pagerrn);
-		while(pg->isparent){
-			printf("* found a parent\n");
-			for(int i = 0; i<pg->nkeys ; i++){
-				if(key < pg->keys[i] ){ // necessidade de procurar proxima pagina
-					parent_tracks[--depht] = pg->pagerrn;
-					pg = getIndexPage(indexFile,pg,pg->children[i]);
-					break;
-				}
-				else if(i==pg->nkeys-1){
-					parent_tracks[--depht] = pg->pagerrn;
-					pg = getIndexPage(indexFile,pg,pg->children[pg->nkeys]);
-				}
+	int height = tree->height;
+	// lastro de quais parents foram percorridos, ordenados inversamente a trajetoria percorrida
+	printf("--- tree root is _%d_\n",pg->pagerrn);
+	// printf("--------- beforeIsParentWhile _%d_\n",pg->isparent);
+	while(pg->isparent>0){
+		printf("---------- countWhile\n");
+		for(i = 0; i<pg->nkeys ; i++){
+			if(key < pg->keys[i] ){ // necessidade de procurar proxima pagina
+			printf("left\n");
+				break;
+			}
+			else if(i==pg->nkeys-1){
+				printf("right\n");
 			}
 		}
-		int overflow = insertKeyToPage(pg,st->numUSP,tree);
-		storeIndexPage(indexFile,pg);
-		// insercao em arquivo de dados
-		fseek(dataFile,0,SEEK_END);
-		fprintf(dataFile,"%-*d%-*s%-*s%-*s%-8.2f",INTFIELD, st->numUSP,STRFIELD, st->name,STRFIELD, st->surname,STRFIELD, st->course, st->grade);
+		parent_tracks[--height] = pg->pagerrn;
+		printf("-- append to track page: _%d_ index _%d_ child points to %d\n",pg->pagerrn,i,pg->children[i]);
+		getIndexPage(indexFile,pg,pg->children[i]);
+	}
+	printf("Height: %d V	",height);
+	printf("_%d_ Parent tracks: _",sizeof(parent_tracks)/sizeof(int));
+	for(int j = 0; j<tree->height ; j++){
+		printf("%d ",parent_tracks[j]);
+	}
+	printf("_\n");
+	insertKeyToLeaf(tree,pg,st->numUSP);
+	printf(" key : %d inserted to page %d has pg->nkeys %d\n\n",st->numUSP,pg->pagerrn,pg->nkeys);
+	storeIndexPage(indexFile,pg);
+	// insercao em arquivo de dados
+	fseek(dataFile,0,SEEK_END);
 
-		if(pg->nkeys >= ORDER){ // esta cheio
-			// leafOverflow(indexFile,tree,pg,0,parent_tracks);
-		}
-		else {
+	fprintf(dataFile,"%-*d%-*s%-*s%-*s%-8.2f\n",INTFIELD, st->numUSP,STRFIELD, st->name,STRFIELD, st->surname,STRFIELD, st->course, st->grade);
 
-		}
+	height = 0;
+	while(height<=tree->height && pg->nkeys >= ORDER){ 
+		// se tiver 1 overflow , 
+		height = overflow(indexFile,tree,pg,height,parent_tracks);
+		height++;
+		printf("------------- while \n\n\n");
+		// printPage(pg);
+		// verificar se o pg volta com valores novos
 	}
 }
